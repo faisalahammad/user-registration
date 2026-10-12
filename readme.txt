@@ -261,6 +261,7 @@ You can report security bugs through the Patchstack Vulnerability Disclosure Pro
 * Enhance  - New sites use form payment fields only; Stripe is available on the Personal plan.
 * Enhance  - Tools (Logs, System Info, Setup Wizard) redesigned to match the Settings screens.
 * Enhance  - Site Assistant can suggest linking existing WordPress users to registration forms.
+* Enhance  - Optionally assign a default free membership when Social Connect skips plan selection.
 * Add      - Show or hide secret payment keys in the setup wizard.
 * Add      - Read-only WordPress abilities for forms, stats, and members (works with the official MCP Adapter).
 * Fix      - Clearer wording for the Force Captcha setting.
@@ -322,6 +323,7 @@ You can report security bugs through the Patchstack Vulnerability Disclosure Pro
 * Fix      - Multi-step forms no longer show step 1 fields inside step 2 after rows are reordered.
 * Fix      - Remove the stuck database update notice; updates run automatically in the background.
 * Fix      - Failed payments stop retrying after the final attempt and send the final notice email.
+* Fix      - A renewed subscription no longer carries an old failed-payment retry count into its next failure, and every failed retry sends the retry-failed email.
 * Fix      - Renewal and expiring-soon reminder emails still send if the daily schedule was missed.
 * Fix      - Forms save correctly when no captcha type is set, and captcha is not skipped by mistake.
 * Fix      - Form preview no longer loads the block editor; Stripe's script loads only when Stripe is on.
