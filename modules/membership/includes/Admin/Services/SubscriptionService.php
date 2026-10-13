@@ -229,7 +229,8 @@ class SubscriptionService {
 			case 'bank':
 				return array( 'status' => true );
 			default:
-				return apply_filters( 'user_registration_membership_cancel_subscription', array( 'status' => false ), $order, $subscription );
+				// The fourth argument tells a gateway add-on whether the cancel is immediate, so it only ends access right away then.
+				return apply_filters( 'user_registration_membership_cancel_subscription', array( 'status' => false ), $order, $subscription, $force_cancel );
 		}
 	}
 	public function reactivate_subscription( $order, $subscription ) {
@@ -292,7 +293,15 @@ class SubscriptionService {
 			if ( get_user_meta( $user_id, $sent_key, true ) === $subscription['next_billing_date'] || get_user_meta( $user_id, 'urm_billing_reminder_sent_for_date', true ) === $subscription['next_billing_date'] ) {
 				continue;
 			}
-			$email_service->send_email( $subscription, 'membership_renewal' );
+			// A subscription created under manual renewal gets the expiring soon email instead.
+			if ( 'automatic' !== urm_get_renewal_behaviour( $user_id, $subscription['subscription_id'] ) ) {
+				continue;
+			}
+
+			// An email that was not sent leaves the cycle open, so a later run can still send it.
+			if ( false === $email_service->send_email( $subscription, 'membership_renewal' ) ) {
+				continue;
+			}
 			update_user_meta( $user_id, $sent_key, $subscription['next_billing_date'] );
 		}
 	}
@@ -966,7 +975,9 @@ class SubscriptionService {
 
 					$user_membership_group_ids = array_values( array_unique( $user_membership_group_ids ) );
 
-					if ( ! in_array( $membership_group, $user_membership_group_ids ) ) {
+					// A plan in a group the member holds nothing in is not an extra plan of that group, so the group's setting does not apply.
+					// A plan outside every group is never allowed on top of an existing membership.
+					if ( ! empty( $membership_group['ID'] ) && ! in_array( absint( $membership_group['ID'] ), array_map( 'absint', $user_membership_group_ids ), true ) ) {
 						$multiple_allowed = true;
 					}
 				}
@@ -1273,6 +1284,9 @@ class SubscriptionService {
 			update_user_meta( $member_id, 'urm_membership_process', $membership_process );
 		}
 
+		// The gateway renewal below follows the current setting, so reminders for this subscription do too from now on.
+		urm_save_renewal_behaviour( $member_id, $member_subscription['ID'] );
+
 		$orders_data     = $order_service->prepare_orders_data( $members_data, $member_id, $member_subscription, array(), true ); // prepare data for orders table.
 		$order           = $this->orders_repository->create( $orders_data );
 		$payment_service = new PaymentService( $selected_pg, $membership['ID'], $user->data->user_email );
@@ -1334,6 +1348,16 @@ class SubscriptionService {
 		update_user_meta( $member_id, 'urm_is_member_renewing', true );
 	}
 
+	/**
+	 * Roll a subscription's billing dates forward after a successful renewal or retry.
+	 *
+	 * Also clears the payment-retry counter so a later, unrelated failure starts
+	 * counting from zero instead of from where a recovered failure left off.
+	 *
+	 * @param array $member_subscription Row from MembersSubscriptionRepository.
+	 * @param array $membership_metas    The membership's meta, including the subscription duration.
+	 * @return void
+	 */
 	public function update_subscription_data_for_renewal( $member_subscription, $membership_metas ) {
 
 		$subscription_value    = $membership_metas['subscription']['value'];
@@ -1356,6 +1380,10 @@ class SubscriptionService {
 			)
 		);
 		update_user_meta( $member_subscription['user_id'], 'urm_last_renewed_on', date( 'Y-m-d 00:00:00' ) );
+
+		// A recovered failure is over - a later, unrelated one must not inherit its count.
+		delete_user_meta( $member_subscription['user_id'], 'urm_is_payment_retrying' );
+
 		$membership_process = urm_get_membership_process( $member_subscription['user_id'] );
 
 		if ( ! empty( $membership_process ) && in_array( $member_subscription['item_id'], $membership_process['renew'] ) ) {
@@ -1410,7 +1438,15 @@ class SubscriptionService {
 			if ( get_user_meta( $user_id, $sent_key, true ) === $subscription['next_billing_date'] || get_user_meta( $user_id, 'urm_expiring_reminder_sent_for_date', true ) === $subscription['next_billing_date'] ) {
 				continue;
 			}
-			$email_service->send_email( $subscription, 'membership_expiring_soon' );
+			// A subscription created under automatic renewal gets the renewal reminder instead.
+			if ( 'manual' !== urm_get_renewal_behaviour( $user_id, $subscription['subscription_id'] ) ) {
+				continue;
+			}
+
+			// An email that was not sent leaves the cycle open, so a later run can still send it.
+			if ( false === $email_service->send_email( $subscription, 'membership_expiring_soon' ) ) {
+				continue;
+			}
 			update_user_meta( $user_id, $sent_key, $subscription['next_billing_date'] );
 		}
 	}
